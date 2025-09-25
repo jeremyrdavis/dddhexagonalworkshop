@@ -18,6 +18,7 @@ public class AttendeeEntity {
     private String email;
 
     @OneToOne(cascade = CascadeType.ALL)
+    @JoinColumn(name = "address_id")
     AddressEntity address;
 
     /* Default, no-arg constructor required by Hibernate, which we are using as our JPA provider.
