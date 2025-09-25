@@ -311,6 +311,7 @@ import java.util.Optional;
       private AttendeeEntity fromAggregate(Attendee attendee) {
       return new AttendeeEntity(attendee.getEmail());
       }
+}
 
 ```
 
