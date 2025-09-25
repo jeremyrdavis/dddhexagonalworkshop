@@ -312,20 +312,6 @@ import java.util.Optional;
       return new AttendeeEntity(attendee.getEmail());
       }
 
-  /**
-    * Converts an AttendeeEntity from the database to a domain Attendee aggregate.
-    * This reconstitutes the domain object from persisted data.
-    *
-    * @param entity The persistence entity
-    * @return The domain aggregate
-      */
-      private Attendee toAggregate(AttendeeEntity entity) {
-      // Note: In a real system, you might need a factory method on Attendee
-      // to reconstruct from persisted state, since registerAttendee() is for new attendees
-      return Attendee.fromPersistedData(entity.getEmail());
-      }
-      }
-
 ```
 
 ### Key Design Decisions
