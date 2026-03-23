@@ -1,0 +1,338 @@
+schemaVersion: 2.2.0
+metadata:
+  name: ddd-workshop-complete
+  displayName: "DDD Workshop - Complete Environment"
+  description: "Complete DDD Hexagonal Architecture Workshop with Java 21, PostgreSQL, and Kafka"
+  tags:
+    - Java
+    - Java21
+    - Quarkus
+    - PostgreSQL
+    - Kafka
+    - DDD
+  projectType: "Quarkus"
+  language: "Java"
+  version: "1.0.0"
+
+components:
+  # Java 21 Development Container
+  - name: tools
+    container:
+      image: registry.access.redhat.com/ubi9/openjdk-21:1.20
+      memoryLimit: "768Mi"
+      memoryRequest: "384Mi"
+      cpuLimit: "500m"
+      cpuRequest: "100m"
+      # Override the default command to prevent auto-start
+      command: ['/bin/bash']
+      args: ['-c', 'while true; do sleep 30; done']
+      env:
+        - name: MAVEN_OPTS
+          value: "-Xmx384m"
+        - name: QUARKUS_HTTP_HOST
+          value: "0.0.0.0"
+        - name: JAVA_HOME
+          value: "/usr/lib/jvm/java-21-openjdk"
+        - name: QUARKUS_DATASOURCE_JDBC_URL
+          # value: "jdbc:postgresql://ddd-workshop-postgresql.ddd-workshop.svc.cluster.local:5432/quarkus"
+          value: "jdbc:postgresql://localhost:5432/quarkus"
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          # value: "ddd-workshop-kafka.ddd-workshop.svc.cluster.local:9092"
+          value: "localhost:9092"
+      endpoints:
+        - name: http-8080
+          targetPort: 8080
+          exposure: public
+          protocol: https
+        - name: debug
+          targetPort: 5005
+          exposure: internal
+      volumeMounts:
+        - name: m2
+          path: /home/jboss/.m2
+      sourceMapping: /projects
+
+  # PostgreSQL Sidecar Container
+  - name: postgresql
+    container:
+      image: registry.redhat.io/rhel9/postgresql-16:latest
+      memoryLimit: "384Mi"
+      memoryRequest: "192Mi"
+      cpuLimit: "200m"
+      cpuRequest: "100m"
+      env:
+        - name: POSTGRESQL_USER
+          value: "quarkus"
+        - name: POSTGRESQL_PASSWORD
+          value: "quarkus"
+        - name: POSTGRESQL_DATABASE
+          value: "quarkus"
+        - name: POSTGRESQL_ADMIN_PASSWORD
+          value: "quarkus"
+        - name: POSTGRESQL_SHARED_BUFFERS
+          value: "32MB"
+        - name: POSTGRESQL_WORK_MEM
+          value: "2MB"
+        - name: POSTGRESQL_MAX_CONNECTIONS
+          value: "50"
+      endpoints:
+        - name: postgresql
+          targetPort: 5432
+          exposure: none
+      volumeMounts:
+        - name: postgresql-data
+          path: /var/lib/pgsql/data
+
+  # Kafka Sidecar Container
+  - name: kafka
+    container:
+      image: quay.io/takinosh/kafka:3.6
+      memoryLimit: "768Mi"
+      memoryRequest: "384Mi"
+      cpuLimit: "300m"
+      cpuRequest: "150m"
+      env:
+        - name: KAFKA_CFG_NODE_ID
+          value: "1"
+        - name: KAFKA_CFG_PROCESS_ROLES
+          value: "controller,broker"
+        - name: KAFKA_CFG_CONTROLLER_QUORUM_VOTERS
+          value: "1@localhost:9093"
+        - name: KAFKA_CFG_LISTENERS
+          value: "PLAINTEXT://:9092,CONTROLLER://:9093"
+        - name: KAFKA_CFG_ADVERTISED_LISTENERS
+          value: "PLAINTEXT://localhost:9092"
+        - name: KAFKA_CFG_CONTROLLER_LISTENER_NAMES
+          value: "CONTROLLER"
+        - name: KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP
+          value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+        - name: KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE
+          value: "true"
+        - name: KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR
+          value: "1"
+        - name: KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+          value: "1"
+        - name: KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR
+          value: "1"
+        - name: KAFKA_HEAP_OPTS
+          value: "-Xmx192m -Xms192m"
+      endpoints:
+        - name: kafka
+          targetPort: 9092
+          exposure: none
+      volumeMounts:
+        - name: kafka-data
+          path: /bitnami/kafka
+
+  # Maven cache volume
+  - name: m2
+    volume:
+      ephemeral: true
+
+  # PostgreSQL Data Volume
+  - name: postgresql-data
+    volume:
+      ephemeral: true
+
+  # Kafka Data Volume
+  - name: kafka-data
+    volume:
+      ephemeral: true
+
+commands:
+  # Environment check
+  - id: check-env
+    exec:
+      label: "Check Environment"
+      component: tools
+      commandLine: |
+        echo "=== Environment Check ==="
+        echo "Java version:"
+        java -version
+        echo "Maven version:"
+        mvn -version || echo "Maven not found, installing..."
+        echo "Current directory:"
+        pwd
+        echo "Projects directory contents:"
+        ls -la /projects
+        echo "=== Service Connectivity ==="
+        echo "PostgreSQL:" && nc -zv localhost 5432 || echo "PostgreSQL not ready"
+        echo "Kafka:" && nc -zv localhost 9092 || echo "Kafka not ready"
+        echo "=== Check Complete ==="
+      group:
+        kind: run
+        isDefault: true
+
+  # Install Maven if needed
+  - id: install-maven
+    exec:
+      label: "Install Maven"
+      component: tools
+      commandLine: |
+        echo "Installing Maven..."
+        microdnf update -y
+        microdnf install -y maven
+        mvn -version
+        echo "Maven installation complete!"
+      group:
+        kind: build
+
+  # Service connectivity check
+  - id: check-services
+    exec:
+      label: "Check Service Connectivity"
+      component: tools
+      commandLine: |
+        echo "=== Service Connectivity Check ==="
+        echo "Testing PostgreSQL connection:"
+        nc -zv localhost 5432 && echo "✅ PostgreSQL accessible" || echo "❌ PostgreSQL not accessible"
+        echo "Testing Kafka connection:"
+        nc -zv localhost 9092 && echo "✅ Kafka accessible" || echo "❌ Kafka not accessible"
+        echo "=== Health Check ==="
+        curl -s http://localhost:8080/q/health 2>/dev/null && echo "✅ Application healthy" || echo "❌ Application not running"
+      group:
+        kind: run
+
+  # Build Module 01
+  - id: build-module-01
+    exec:
+      label: "Build Module 01"
+      component: tools
+      commandLine: |
+        echo "Building Module 01 with Java 21..."
+        cd /projects/dddhexagonalworkshop/01-End-to-End-DDD/module-01-code
+        if [ -f "pom.xml" ]; then
+          ./mvnw clean compile -DskipTests
+          echo "✅ Module 01 build complete!"
+        else
+          echo "❌ No pom.xml found in Module 01"
+        fi
+      group:
+        kind: build
+
+  # Run Module 01
+  - id: run-module-01
+    exec:
+      label: "Run Module 01 - Quarkus Dev"
+      component: tools
+      commandLine: |
+        echo "Starting Module 01 with PostgreSQL and Kafka..."
+        cd /projects/dddhexagonalworkshop/01-End-to-End-DDD/module-01-code
+        if [ -f "pom.xml" ]; then
+          ./mvnw quarkus:dev -Dquarkus.http.host=0.0.0.0
+        else
+          echo "❌ No pom.xml found in Module 01"
+        fi
+      group:
+        kind: run
+
+  # Build Module 02
+  - id: build-module-02
+    exec:
+      label: "Build Module 02"
+      component: tools
+      commandLine: |
+        echo "Building Module 02 with Java 21..."
+        cd /projects/dddhexagonalworkshop/02-Value-Objects/module-02-code
+        if [ -f "pom.xml" ]; then
+          ./mvnw clean compile -DskipTests
+          echo "✅ Module 02 build complete!"
+        else
+          echo "❌ No pom.xml found in Module 02"
+        fi
+      group:
+        kind: build
+
+  # Run Module 02
+  - id: run-module-02
+    exec:
+      label: "Run Module 02 - Quarkus Dev"
+      component: tools
+      commandLine: |
+        echo "Starting Module 02 with PostgreSQL and Kafka..."
+        cd /projects/dddhexagonalworkshop/02-Value-Objects/module-02-code
+        if [ -f "pom.xml" ]; then
+          ./mvnw quarkus:dev -Dquarkus.http.host=0.0.0.0
+        else
+          echo "❌ No pom.xml found in Module 02"
+        fi
+      group:
+        kind: run
+
+  # Build Module 03
+  - id: build-module-03
+    exec:
+      label: "Build Module 03"
+      component: tools
+      commandLine: |
+        echo "Building Module 03 with Java 21..."
+        cd /projects/dddhexagonalworkshop/03-Anticorruption-Layer/module-03-code
+        if [ -f "pom.xml" ]; then
+          ./mvnw clean compile -DskipTests
+          echo "✅ Module 03 build complete!"
+        else
+          echo "❌ No pom.xml found in Module 03"
+        fi
+      group:
+        kind: build
+
+  # Run Module 03
+  - id: run-module-03
+    exec:
+      label: "Run Module 03 - Quarkus Dev"
+      component: tools
+      commandLine: |
+        echo "Starting Module 03 with PostgreSQL and Kafka..."
+        cd /projects/dddhexagonalworkshop/03-Anticorruption-Layer/module-03-code
+        if [ -f "pom.xml" ]; then
+          ./mvnw quarkus:dev -Dquarkus.http.host=0.0.0.0
+        else
+          echo "❌ No pom.xml found in Module 03"
+        fi
+      group:
+        kind: run
+
+  # General build command
+  - id: build
+    exec:
+      label: "Build Current Module"
+      component: tools
+      commandLine: |
+        echo "Building current module with Java 21..."
+        if [ -f "pom.xml" ]; then
+          ./mvnw clean compile -DskipTests
+        else
+          echo "❌ No pom.xml in current directory. Navigate to a module first."
+        fi
+      group:
+        kind: build
+
+  # General run command
+  - id: run
+    exec:
+      label: "Run Current Module"
+      component: tools
+      commandLine: |
+        echo "Running current module with full environment..."
+        if [ -f "pom.xml" ]; then
+          ./mvnw quarkus:dev -Dquarkus.http.host=0.0.0.0
+        else
+          echo "❌ No pom.xml in current directory. Navigate to a module first."
+        fi
+      group:
+        kind: run
+
+  # Test command
+  - id: test
+    exec:
+      label: "Test Current Module"
+      component: tools
+      commandLine: |
+        echo "Testing current module..."
+        if [ -f "pom.xml" ]; then
+          ./mvnw test
+        else
+          echo "❌ No pom.xml in current directory. Navigate to a module first."
+        fi
+      group:
+        kind: test
