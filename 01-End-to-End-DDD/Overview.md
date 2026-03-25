@@ -101,7 +101,7 @@ At the end of this module completing this module, you will:
 
 If you encounter issues:
 
-1. Check the code in **model-01-soltuion** 
+1. Check the code in **model-01-solution** 
 2. Verify your code matches the provided examples exactly
 3. Look for error messages in the console output
 
