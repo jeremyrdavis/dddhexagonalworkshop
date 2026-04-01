@@ -13,7 +13,7 @@ See the [Overview](Overview.md) for architecture details and background.
 ## Setup
 
 ```bash
-cd module-01-solution
+cd d 01-End-to-End-DDD-Python/
 
 # Create and activate a virtual environment
 python -m venv .venv
